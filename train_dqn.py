@@ -1,11 +1,11 @@
-﻿"""Training script for the Catch environment using DQN."""
+"""Training script for the Catch environment using DQN."""
 from __future__ import annotations
 
 import argparse
 import statistics
 from typing import List, Optional
 
-from catch import CatchEnv, DQNAgent, DQNConfig
+from catch import CatchEnv, CatchRenderer, DQNAgent, DQNConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,6 +45,29 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Save training curves figure to this path (requires matplotlib).",
     )
+    parser.add_argument(
+        "--render",
+        action="store_true",
+        help="Show a Tkinter window with the agent playing during training.",
+    )
+    parser.add_argument(
+        "--render-width",
+        type=int,
+        default=400,
+        help="Window width when --render is enabled.",
+    )
+    parser.add_argument(
+        "--render-height",
+        type=int,
+        default=400,
+        help="Window height when --render is enabled.",
+    )
+    parser.add_argument(
+        "--render-delay",
+        type=float,
+        default=0.0,
+        help="Optional delay in seconds between rendered frames.",
+    )
     return parser.parse_args()
 
 
@@ -69,6 +92,24 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
     )
     agent = DQNAgent(state_dim, action_dim, config=config)
 
+    renderer: Optional[CatchRenderer] = None
+    render_delay = max(0.0, args.render_delay)
+    if args.render:
+        try:
+            renderer = CatchRenderer(width=args.render_width, height=args.render_height)
+        except Exception as exc:  # pragma: no cover - GUI creation is environment-dependent
+            print(f"Renderer disabled: {exc}. Continuing without visualization.")
+            renderer = None
+
+    def maybe_render() -> None:
+        nonlocal renderer
+        if not renderer:
+            return
+        renderer.render_env(env, delay=render_delay)
+        if renderer.closed:
+            print("Renderer window closed. Continuing without visualization.")
+            renderer = None
+
     episode_rewards: List[float] = []
     # Track per-episode metrics for optional visualization.
     history = {
@@ -78,38 +119,45 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
         "avg_loss": [],
         "epsilon": [],
     }
-    for episode in range(1, args.episodes + 1):
-        state = env.reset()
-        done = False
-        total_reward = 0.0
-        losses: List[float] = []
 
-        for _ in range(env.max_steps):
-            action = agent.select_action(state, training=True)
-            next_state, reward, done, _ = env.step(action)
-            agent.push_transition(state, action, reward, next_state, done)
-            loss = agent.update()
-            if loss is not None:
-                losses.append(loss)
+    try:
+        for episode in range(1, args.episodes + 1):
+            state = env.reset()
+            maybe_render()
+            done = False
+            total_reward = 0.0
+            losses: List[float] = []
 
-            state = next_state
-            total_reward += reward
-            if done:
-                break
+            for _ in range(env.max_steps):
+                action = agent.select_action(state, training=True)
+                next_state, reward, done, _ = env.step(action)
+                agent.push_transition(state, action, reward, next_state, done)
+                loss = agent.update()
+                if loss is not None:
+                    losses.append(loss)
 
-        episode_rewards.append(total_reward)
-        avg_reward = statistics.fmean(episode_rewards[-args.episodes_log_window :])
-        avg_loss = statistics.fmean(losses) if losses else 0.0
-        history["episode"].append(episode)
-        history["reward"].append(total_reward)
-        history["avg_reward"].append(avg_reward)
-        history["avg_loss"].append(avg_loss)
-        history["epsilon"].append(agent.epsilon)
-        print(
-            f"Episode {episode:04d} | reward={total_reward:6.2f} | "
-            f"avg_reward={avg_reward:6.2f} | loss={avg_loss:7.4f} | epsilon={agent.epsilon:5.2f}",
-            flush=True,
-        )
+                state = next_state
+                maybe_render()
+                total_reward += reward
+                if done:
+                    break
+
+            episode_rewards.append(total_reward)
+            avg_reward = statistics.fmean(episode_rewards[-args.episodes_log_window :])
+            avg_loss = statistics.fmean(losses) if losses else 0.0
+            history["episode"].append(episode)
+            history["reward"].append(total_reward)
+            history["avg_reward"].append(avg_reward)
+            history["avg_loss"].append(avg_loss)
+            history["epsilon"].append(agent.epsilon)
+            print(
+                f"Episode {episode:04d} | reward={total_reward:6.2f} | "
+                f"avg_reward={avg_reward:6.2f} | loss={avg_loss:7.4f} | epsilon={agent.epsilon:5.2f}",
+                flush=True,
+            )
+    finally:
+        if renderer:
+            renderer.close()
 
     if args.model_path:
         agent.save(args.model_path)

@@ -51,6 +51,10 @@ pip install matplotlib pytest
 | `--episodes-log-window` | 日志中奖励滑动平均窗口 | `20` |
 | `--plot` | 训练完成后弹出可视化窗口（需 `matplotlib`） | `False` |
 | `--plot-path` | 将训练曲线保存到指定路径 | `None` |
+| `--render` | 在训练时实时展示 Tkinter 游戏界面 | `False` |
+| `--render-width` | 渲染窗口宽度，仅在 --render 时生效 | `400` |
+| `--render-height` | 渲染窗口高度，仅在 --render 时生效 | `400` |
+| `--render-delay` | 每帧额外暂停时间(秒)，最小值 0.0 | `0.0` |
 
 ## 训练过程可视化
 
@@ -65,6 +69,13 @@ python train_dqn.py --episodes 600 --plot --plot-path curves.png
 1. 每回合奖励与滑动平均奖励；
 2. 训练期间的平均损失；
 3. ε-贪心策略中的探索率变化。
+
+要实时观察训练过程，可以使用 `--render` 打开 Tkinter 图形窗口，实时查看每个回合的游戏状态。
+可结合 `--render-delay` 设置每帧停顿时长，值为 0.0 时表示不额外延迟；也可以用 `--render-width` 和 `--render-height` 调整窗口尺寸。
+
+```bash
+python train_dqn.py --episodes 120 --render --render-delay 0.05
+```
 
 若未安装 `matplotlib`，脚本会给出提示而不会终止训练。
 
